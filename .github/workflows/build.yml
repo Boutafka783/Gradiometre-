@@ -20,9 +20,10 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # تم تعديل الإصدار من 8.7 إلى 8.10.2 ليتوافق مع AGP 8.7.3
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 8.7
+          gradle-version: 8.10.2
 
       - name: Build debug APK
         shell: bash
