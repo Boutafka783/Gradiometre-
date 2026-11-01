@@ -12,24 +12,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
       - name: Generate project from setup.py
         run: python3 setup.py .
 
-      - uses: actions/setup-java@v4
+      - name: Setup App Icon
+        shell: bash
+        run: |
+          # إنشاء مجلدات الـ mipmap للأيقونة إذا لزم الأمر، أو نسخ الصورة لتعتمد عليها الموارد
+          mkdir -p app/src/main/res/mipmap-hdpi
+          mkdir -p app/src/main/res/mipmap-xxhdpi
+          if [ -f "icon.png" ]; then
+            cp icon.png app/src/main/res/mipmap-hdpi/ic_launcher.png
+            cp icon.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+            cp icon.png app/src/main/res/mipmap-hdpi/ic_launcher_round.png
+            cp icon.png app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
+            echo "تم تعيين الأيقونة بنجاح من icon.png"
+          else
+            echo "تحذير: لم يتم العثور على ملف icon.png"
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      # تم تعديل الإصدار من 8.7 إلى 8.10.2 ليتوافق مع AGP 8.7.3
-      - uses: gradle/actions/setup-gradle@v4
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 8.10.2
+          gradle-version: 8.7
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew || true
 
       - name: Build debug APK
         shell: bash
         run: |
           set -o pipefail
-          gradle assembleDebug --console=plain 2>&1 | tee build.log
+          ./gradlew assembleDebug --console=plain 2>&1 | tee build.log
 
       - name: Error summary
         if: failure()
@@ -40,10 +65,11 @@ jobs:
           echo "=== What went wrong ==="
           grep -n -A15 "What went wrong" build.log | head -40 || true
 
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - name: Upload APK and Logs Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: build-output
+          name: gradiometer-debug-apk
           path: |
             build.log
             app/build/outputs/apk/debug/*.apk
+
