@@ -39,6 +39,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          items: platforms;android-34,build-tools;34.0.0
 
       # AGP 8.7.3 يحتاج Gradle 8.9 أو أحدث
       - name: Setup Gradle
@@ -84,6 +86,7 @@ jobs:
           path: |
             build.log
             app/build/outputs/apk/release/*.apk
+
 
 
 
