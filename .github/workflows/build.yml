@@ -17,19 +17,41 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Pillow: يرسم الأيقونة المؤقتة ويحوّل صورتك إلى أيقونة التطبيق
+      - name: Install Pillow
+        run: pip install Pillow
+
       - name: Generate project from setup.py
         run: python3 setup.py .
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
 
+      # يحوّل صورة الأيقونة (IMG_*.jpg أو أي صورة بهذا الاسم في جذر المستودع) إلى أيقونات التطبيق
       - name: Setup App Icon
         shell: bash
         run: |
-          if [ -f "IMG_20261101_171214_(520_x_520_pixel).jpg" ]; then
-            echo "تم العثور على صورة الأيقونة وجاهزة للتوزيع"
-          fi
+          python3 - <<'PY'
+          import glob
+          from PIL import Image, ImageDraw
+          files = sorted(glob.glob("IMG_*.jpg") + glob.glob("IMG_*.jpeg") + glob.glob("IMG_*.png"))
+          if not files:
+              print("لا توجد صورة أيقونة (IMG_*)؛ تبقى الأيقونة المؤقتة.")
+          else:
+              src = Image.open(files[0]).convert("RGB")
+              side = min(src.size)
+              left = (src.width - side) // 2
+              top = (src.height - side) // 2
+              src = src.crop((left, top, left + side, top + side))
+              sizes = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
+              for density, px in sizes.items():
+                  folder = "app/src/main/res/mipmap-" + density
+                  img = src.resize((px, px), Image.Resampling.LANCZOS)
+                  img.save(folder + "/ic_launcher.png")
+                  mask = Image.new("L", (px, px), 0)
+                  ImageDraw.Draw(mask).ellipse((0, 0, px - 1, px - 1), fill=255)
+                  round_img = Image.new("RGBA", (px, px), (0, 0, 0, 0))
+                  round_img.paste(img, (0, 0), mask)
+                  round_img.save(folder + "/ic_launcher_round.png")
+              print("تم تحويل", files[0], "إلى أيقونات التطبيق")
+          PY
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -37,37 +59,36 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # compileSdk = 36 في هذا المشروع، لذلك نثبّت منصة 36 وأدوات البناء 36
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-34 platforms;android-35 build-tools;34.0.0'
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
-      # AGP 8.7.3 يحتاج Gradle 8.9 أو أحدث
+      # Android Gradle Plugin 8.13.2 يحتاج Gradle 8.13 أو أحدث
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 8.10.2
+          gradle-version: 8.13
 
       - name: Create google-services.json
         shell: bash
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
-            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "الخطأ: السر GOOGLE_SERVICES_JSON غير موجود. ضع محتوى google-services.json الخاص بمشروع Firebase لتطبيق Gradiometer (io.mycompany.gradiometer) في Settings > Secrets."
+            exit 1
           fi
+          printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
 
-      - name: Build Release APK
+      # Debug APK: موقّع تلقائياً بمفتاح التصحيح فيُثبَّت على الهاتف مباشرة.
+      # (نسخة release بلا مفتاح توقيع تخرج «unsigned» ولا يمكن تثبيتها.)
+      - name: Build Debug APK
         shell: bash
-        env:
-          VIDEO_SERVER_URL: ${{ secrets.VIDEO_SERVER_URL }}
-          REMOTE_CONFIG_URL: ${{ secrets.REMOTE_CONFIG_URL }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
         run: |
           set -o pipefail
-          gradle assembleRelease --stacktrace --console=plain 2>&1 | tee build.log
+          gradle assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
 
       - name: Error summary
         if: failure()
@@ -82,7 +103,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gradiometer-release-apk
+          name: gradiometer-debug-apk
           path: |
             build.log
-            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/debug/*.apk
+
